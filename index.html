@@ -32,6 +32,7 @@
     --sans: 'Noto Sans TC', sans-serif;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: #080e1a; }
 
 body {
 background: var(–bg);
@@ -655,6 +656,97 @@ table { min-width: 580px; }
 ```
 
 }
+
+/* ── transaction mode buttons ── */
+.tx-mode-btn {
+flex: 1;
+font-family: var(–sans);
+font-size: 12px;
+font-weight: 500;
+padding: 8px 10px;
+border: 1px solid var(–border);
+border-radius: 8px;
+background: transparent;
+color: var(–text-dim);
+cursor: pointer;
+transition: all .2s;
+text-align: center;
+}
+.tx-mode-btn:hover { color: var(–text); border-color: var(–border-hi); background: var(–card); }
+.tx-mode-btn.active { background: var(–accent); border-color: var(–accent); color: #fff; font-weight: 600; box-shadow: 0 0 12px rgba(59,158,255,.3); }
+.tx-mode-btn.sell-active { background: var(–red); border-color: var(–red); color: #fff; box-shadow: 0 0 12px rgba(248,113,113,.3); }
+
+/* ── mobile stock card view (replaces table on small screens) ── */
+.stock-cards { display: none; }
+@media (max-width: 640px) {
+.stock-cards { display: flex; flex-direction: column; gap: 10px; }
+.table-wrap table { display: none; }
+.stock-card-item {
+background: var(–card);
+border: 1px solid var(–border);
+border-radius: 12px;
+padding: 14px 16px;
+transition: border-color .2s;
+}
+.stock-card-item:hover { border-color: var(–border-hi); }
+.stock-card-top {
+display: flex; justify-content: space-between; align-items: flex-start;
+margin-bottom: 10px;
+}
+.stock-card-meta { display: flex; flex-direction: column; gap: 2px; }
+.stock-card-code { font-family: var(–mono); font-size: 16px; font-weight: 700; color: var(–accent); }
+.stock-card-name { font-family: var(–sans); font-size: 12px; color: var(–text-dim); }
+.stock-card-pnl  { text-align: right; }
+.stock-card-pnl-val { font-family: var(–mono); font-size: 15px; font-weight: 600; }
+.stock-card-pnl-pct { font-family: var(–mono); font-size: 11px; margin-top: 2px; }
+.stock-card-grid {
+display: grid; grid-template-columns: 1fr 1fr 1fr;
+gap: 8px 4px;
+margin-bottom: 10px;
+}
+.stock-card-field { display: flex; flex-direction: column; gap: 2px; }
+.stock-card-field-label { font-size: 9px; color: var(–text-dim); font-family: var(–mono); letter-spacing: .08em; text-transform: uppercase; }
+.stock-card-field-val   { font-size: 13px; color: var(–text); font-family: var(–mono); font-weight: 500; }
+.stock-card-actions { display: flex; gap: 8px; }
+.stock-card-actions .btn { flex: 1; font-size: 12px; padding: 7px; }
+}
+
+/* ── transaction history log ── */
+.tx-log {
+background: var(–card);
+border: 1px solid var(–border);
+border-radius: 12px;
+overflow: hidden;
+margin-bottom: 20px;
+}
+.tx-log-header {
+padding: 12px 16px;
+border-bottom: 1px solid var(–border);
+font-family: var(–mono); font-size: 10px; letter-spacing:.12em;
+color: var(–text-dim); text-transform: uppercase;
+background: rgba(8,14,26,.5);
+display: flex; align-items: center; gap: 8px;
+}
+.tx-log-header::before {
+content:’’; display:inline-block; width:3px; height:12px;
+background:var(–accent); border-radius:2px;
+}
+.tx-item {
+display: flex; align-items: center; gap: 12px;
+padding: 10px 16px;
+border-bottom: 1px solid rgba(30,48,80,.4);
+font-family: var(–mono); font-size: 12px;
+}
+.tx-item:last-child { border-bottom: none; }
+.tx-type-dot {
+width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.tx-buy  { background: var(–green); box-shadow: 0 0 6px rgba(52,211,153,.4); }
+.tx-sell { background: var(–red);   box-shadow: 0 0 6px rgba(248,113,113,.4); }
+.tx-code { font-weight:600; color:var(–accent); width:48px; }
+.tx-desc { flex:1; color:var(–text-mid); }
+.tx-amt  { color:var(–text); font-weight:500; }
+.tx-date { color:var(–text-dim); font-size:10px; }
 </style>
 
 </head>
@@ -720,10 +812,12 @@ table { min-width: 580px; }
       <div class="table-header">
         <h3>持股明細</h3>
         <div class="btn-group">
-          <button class="btn" onclick="showPage('import', true)">⬇ 匯出</button>
-          <button class="btn primary" onclick="openAddModal()">＋ 新增持股</button>
+          <button class="btn" onclick="openAddModal('buy')">📈 買入</button>
+          <button class="btn danger" onclick="openAddModal('sell')">📉 賣出</button>
+          <button class="btn primary" onclick="openAddModal('new')">＋ 新增</button>
         </div>
       </div>
+      <!-- desktop table -->
       <table>
         <thead>
           <tr>
@@ -739,7 +833,18 @@ table { min-width: 580px; }
         </thead>
         <tbody id="stockTableBody"></tbody>
       </table>
+      <!-- mobile cards -->
+      <div class="stock-cards" id="stockCardList"></div>
     </div>
+
+```
+<!-- transaction log -->
+<div class="tx-log" id="txLogWrap" style="display:none;">
+  <div class="tx-log-header">交易紀錄</div>
+  <div id="txLogBody"></div>
+</div>
+```
+
   </div>
 
   <!-- ── DATA (匯入 / 匯出) ── -->
@@ -938,39 +1043,75 @@ table { min-width: 580px; }
   </div>
 </main>
 
-<!-- ── add/edit modal ── -->
+<!-- ── add/edit stock modal ── -->
 
 <div class="modal-overlay" id="addModal">
-  <div class="modal">
+  <div class="modal" style="width:460px;max-width:96vw;">
     <h2 id="modalTitle">// 新增持股</h2>
-    <div class="form-row">
-      <label>股票代號</label>
-      <input type="text" id="f-code" placeholder="例：2330">
-    </div>
-    <div class="form-row">
-      <label>股票名稱</label>
-      <input type="text" id="f-name" placeholder="例：台積電">
-    </div>
-    <div class="form-row">
-      <label>持有股數（張 × 1000 或零股）</label>
-      <input type="number" id="f-shares" placeholder="例：1000" min="1">
-    </div>
-    <div class="form-row">
-      <label>成本均價（元）</label>
-      <input type="number" id="f-cost" placeholder="例：520.00" step="0.01">
-    </div>
-    <div class="form-row">
-      <label>現價（元，可手動填或之後更新）</label>
-      <input type="number" id="f-price" placeholder="例：850.00" step="0.01">
-    </div>
-    <div class="form-row">
-      <label>已實現損益（元，選填）</label>
-      <input type="number" id="f-realized" placeholder="0" step="1">
-    </div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">取消</button>
-      <button class="btn primary" onclick="saveStock()">儲存</button>
-    </div>
+
+```
+<!-- mode toggle: new position / buy / sell -->
+<div id="txModeRow" style="display:flex;gap:6px;margin-bottom:18px;">
+  <button class="tx-mode-btn active" id="modeNew"  onclick="setTxMode('new')">📋 新增持股</button>
+  <button class="tx-mode-btn"        id="modeBuy"  onclick="setTxMode('buy')">📈 買入</button>
+  <button class="tx-mode-btn"        id="modeSell" onclick="setTxMode('sell')">📉 賣出</button>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">
+  <div class="form-row" style="grid-column:1/-1;" id="rowCode">
+    <label>股票代號</label>
+    <input type="text" id="f-code" placeholder="例：2330" oninput="autoFillName()">
+  </div>
+  <div class="form-row" style="grid-column:1/-1;" id="rowName">
+    <label>股票名稱</label>
+    <input type="text" id="f-name" placeholder="例：台積電">
+  </div>
+
+  <!-- NEW mode fields -->
+  <div class="form-row" style="grid-column:1/-1;" id="rowShares">
+    <label id="sharesLabel">持有股數</label>
+    <input type="number" id="f-shares" placeholder="例：1000" min="0" step="1" oninput="calcTxPreview()">
+  </div>
+  <div class="form-row" id="rowCost">
+    <label>成本均價（元）</label>
+    <input type="number" id="f-cost" placeholder="例：520.00" step="0.01" oninput="calcTxPreview()">
+  </div>
+  <div class="form-row" id="rowPrice">
+    <label>現價（元）</label>
+    <input type="number" id="f-price" placeholder="例：855.00" step="0.01" oninput="calcTxPreview()">
+  </div>
+
+  <!-- BUY/SELL extra fields -->
+  <div class="form-row" id="rowTxDate" style="display:none;">
+    <label>交易日期</label>
+    <input type="date" id="f-tx-date">
+  </div>
+  <div class="form-row" id="rowTxPrice" style="display:none;">
+    <label id="txPriceLabel">買入價格（元）</label>
+    <input type="number" id="f-tx-price" placeholder="例：850.00" step="0.01" oninput="calcTxPreview()">
+  </div>
+  <div class="form-row" id="rowTxShares" style="display:none;grid-column:1/-1;">
+    <label id="txSharesLabel">交易股數</label>
+    <input type="number" id="f-tx-shares" placeholder="例：500" min="1" step="1" oninput="calcTxPreview()">
+  </div>
+
+  <div class="form-row" style="grid-column:1/-1;" id="rowRealized">
+    <label>已實現損益（元，選填）</label>
+    <input type="number" id="f-realized" placeholder="0" step="1">
+  </div>
+</div>
+
+<!-- preview -->
+<div id="txPreviewBox" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;font-family:var(--mono);font-size:12px;color:var(--text-dim);display:none;">
+  <div id="txPreviewContent"></div>
+</div>
+
+<div class="modal-actions">
+  <button class="btn" onclick="closeModal()">取消</button>
+  <button class="btn primary" id="modalSaveBtn" onclick="saveStock()">儲存</button>
+</div>
+```
+
   </div>
 </div>
 
@@ -1185,6 +1326,8 @@ function renderTable() {
 
   // Always recalculate summary — even when empty
   calcSummary();
+  renderStockCards();
+  renderTxLog();
 
   if (stocks.length === 0) {
     tbody.innerHTML = `<tr><td colspan="8">
@@ -1342,41 +1485,286 @@ function saveSnapshot() {
   showToast('✅ 快照已儲存');
 }
 
-// ── modal ──
-function openAddModal() {
-  editIndex = -1;
-  document.getElementById('modalTitle').textContent = '// 新增持股';
-  ['f-code','f-name','f-shares','f-cost','f-price','f-realized'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('addModal').classList.add('open');
+// ── transaction log ──
+let txLog = JSON.parse(localStorage.getItem('tw_txlog') || '[]');
+function saveTxLog() { localStorage.setItem('tw_txlog', JSON.stringify(txLog)); }
+
+let currentTxMode = 'new'; // 'new' | 'buy' | 'sell'
+
+// known stock names for autofill
+const KNOWN = {
+  '2330':'台積電','0050':'元大台灣50','2317':'鴻海','2881':'富邦金',
+  '2882':'國泰金','2884':'玉山金','2886':'兆豐金','2891':'中信金',
+  '2412':'中華電','2002':'中鋼','2303':'聯電','2308':'台達電',
+  '3008':'大立光','2379':'瑞昱','6505':'台塑化','1301':'台塑',
+  '1303':'南亞','0056':'元大高股息','00878':'國泰永續高股息','00919':'群益台灣精選高息',
+  '2454':'聯發科','3711':'日月光投控','2395':'研華','2382':'廣達',
+  '3045':'台灣大','4904':'遠傳','2357':'華碩','2353':'宏碁',
+};
+
+function autoFillName() {
+  const code = document.getElementById('f-code').value.trim();
+  if (KNOWN[code]) document.getElementById('f-name').value = KNOWN[code];
+  // also try to autofill price from existing stock
+  const existing = stocks.find(s => s.code === code);
+  if (existing) {
+    if (!document.getElementById('f-price').value) document.getElementById('f-price').value = existing.price;
+    if (currentTxMode === 'sell' && !document.getElementById('f-tx-price').value)
+      document.getElementById('f-tx-price').value = existing.price;
+  }
+  calcTxPreview();
 }
+
+function setTxMode(mode) {
+  currentTxMode = mode;
+  // update button styles
+  ['New','Buy','Sell'].forEach(m => {
+    const btn = document.getElementById('mode'+m);
+    btn.classList.remove('active','sell-active');
+  });
+  if (mode === 'new')  document.getElementById('modeNew').classList.add('active');
+  if (mode === 'buy')  document.getElementById('modeBuy').classList.add('active');
+  if (mode === 'sell') document.getElementById('modeSell').classList.add('sell-active');
+
+  // show/hide fields
+  const isBuySell = mode === 'buy' || mode === 'sell';
+  document.getElementById('rowShares').style.display  = mode === 'new'  ? '' : 'none';
+  document.getElementById('rowCost').style.display    = mode === 'new'  ? '' : 'none';
+  document.getElementById('rowRealized').style.display = mode === 'sell' ? '' : mode === 'new' ? '' : 'none';
+  document.getElementById('rowTxDate').style.display   = isBuySell ? '' : 'none';
+  document.getElementById('rowTxPrice').style.display  = isBuySell ? '' : 'none';
+  document.getElementById('rowTxShares').style.display = isBuySell ? '' : 'none';
+  document.getElementById('txPreviewBox').style.display = isBuySell ? '' : 'none';
+
+  // labels
+  if (mode === 'buy') {
+    document.getElementById('txPriceLabel').textContent  = '買入價格（元）';
+    document.getElementById('txSharesLabel').textContent = '買入股數';
+    document.getElementById('modalSaveBtn').textContent  = '✅ 確認買入';
+    document.getElementById('modalTitle').textContent    = '// 📈 買入持股';
+  } else if (mode === 'sell') {
+    document.getElementById('txPriceLabel').textContent  = '賣出價格（元）';
+    document.getElementById('txSharesLabel').textContent = '賣出股數';
+    document.getElementById('modalSaveBtn').textContent  = '✅ 確認賣出';
+    document.getElementById('modalTitle').textContent    = '// 📉 賣出持股';
+  } else {
+    document.getElementById('modalSaveBtn').textContent  = '儲存';
+    document.getElementById('modalTitle').textContent    = editIndex >= 0 ? '// 編輯持股' : '// 新增持股';
+  }
+  calcTxPreview();
+}
+
+function calcTxPreview() {
+  if (currentTxMode === 'new') return;
+  const txPrice  = parseFloat(document.getElementById('f-tx-price').value)  || 0;
+  const txShares = parseFloat(document.getElementById('f-tx-shares').value) || 0;
+  const total    = txPrice * txShares;
+  const box      = document.getElementById('txPreviewContent');
+  if (currentTxMode === 'buy') {
+    box.innerHTML = `買入金額：<span style="color:var(--text);font-weight:600;">$${total.toLocaleString('zh-TW')}</span>　股數：<span style="color:var(--green)">${txShares.toLocaleString()}</span> 股`;
+  } else {
+    const code = document.getElementById('f-code').value.trim();
+    const s = stocks.find(s => s.code === code);
+    const pnl = s ? (txPrice - s.cost) * txShares : 0;
+    const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    box.innerHTML = `賣出金額：<span style="color:var(--text);font-weight:600;">$${total.toLocaleString('zh-TW')}</span><br>` +
+      `預估損益：<span style="color:${pnlColor};font-weight:600;">${pnl>=0?'+':''}$${Math.round(pnl).toLocaleString()}</span>` +
+      (s ? `　剩餘股數：<span style="color:var(--text-mid)">${Math.max(0,s.shares-txShares).toLocaleString()} 股</span>` : '');
+  }
+}
+
+// ── modal open ──
+function openAddModal(mode = 'new') {
+  editIndex = -1;
+  ['f-code','f-name','f-shares','f-cost','f-price','f-realized','f-tx-price','f-tx-shares','f-tx-date'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('f-tx-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('txModeRow').style.display = 'flex';
+  document.getElementById('rowCode').style.display = '';
+  document.getElementById('rowName').style.display = '';
+  setTxMode(mode);
+  document.getElementById('addModal').classList.add('open');
+  setTimeout(() => document.getElementById('f-code').focus(), 100);
+}
+
 function openEditModal(i) {
   editIndex = i;
   const s = stocks[i];
+  document.getElementById('txModeRow').style.display = 'none'; // hide mode for edit
   document.getElementById('modalTitle').textContent = '// 編輯持股';
-  document.getElementById('f-code').value = s.code;
-  document.getElementById('f-name').value = s.name;
-  document.getElementById('f-shares').value = s.shares;
-  document.getElementById('f-cost').value = s.cost;
-  document.getElementById('f-price').value = s.price;
+  document.getElementById('f-code').value    = s.code;
+  document.getElementById('f-name').value    = s.name;
+  document.getElementById('f-shares').value  = s.shares;
+  document.getElementById('f-cost').value    = s.cost;
+  document.getElementById('f-price').value   = s.price;
   document.getElementById('f-realized').value = s.realized || 0;
+  // show new-mode fields
+  currentTxMode = 'new';
+  setTxMode('new');
+  document.getElementById('txModeRow').style.display = 'none';
+  document.getElementById('modalSaveBtn').textContent = '更新';
   document.getElementById('addModal').classList.add('open');
 }
+
 function closeModal() { document.getElementById('addModal').classList.remove('open'); }
 
 function saveStock() {
   const code = document.getElementById('f-code').value.trim();
   const name = document.getElementById('f-name').value.trim();
-  const shares = parseFloat(document.getElementById('f-shares').value);
-  const cost = parseFloat(document.getElementById('f-cost').value);
-  const price = parseFloat(document.getElementById('f-price').value);
-  const realized = parseFloat(document.getElementById('f-realized').value) || 0;
-  if (!code || !name || isNaN(shares) || isNaN(cost) || isNaN(price)) {
-    showToast('⚠️ 請填寫完整資訊', 'warn'); return;
+  if (!code || !name) { showToast('⚠️ 請填寫股票代號與名稱', 'warn'); return; }
+
+  // ── EDIT mode
+  if (editIndex >= 0) {
+    const shares   = parseFloat(document.getElementById('f-shares').value);
+    const cost     = parseFloat(document.getElementById('f-cost').value);
+    const price    = parseFloat(document.getElementById('f-price').value);
+    const realized = parseFloat(document.getElementById('f-realized').value) || 0;
+    if (isNaN(shares) || isNaN(cost) || isNaN(price)) { showToast('⚠️ 請填寫完整資訊', 'warn'); return; }
+    stocks[editIndex] = { code, name, shares, cost, price, realized };
+    save(); closeModal(); renderTable(); renderCharts();
+    showToast(`✅ ${code} ${name} 已更新`);
+    return;
   }
-  const entry = { code, name, shares, cost, price, realized };
-  if (editIndex >= 0) { stocks[editIndex] = entry; } else { stocks.push(entry); }
-  save(); closeModal(); renderTable(); renderCharts();
-  showToast(editIndex >= 0 ? '✅ 持股已更新' : `✅ 已新增 ${code} ${name}`);
+
+  const txDate = document.getElementById('f-tx-date').value || new Date().toISOString().slice(0,10);
+
+  // ── NEW position
+  if (currentTxMode === 'new') {
+    const shares   = parseFloat(document.getElementById('f-shares').value);
+    const cost     = parseFloat(document.getElementById('f-cost').value);
+    const price    = parseFloat(document.getElementById('f-price').value);
+    const realized = parseFloat(document.getElementById('f-realized').value) || 0;
+    if (isNaN(shares) || shares <= 0 || isNaN(cost) || isNaN(price)) { showToast('⚠️ 請填寫完整資訊', 'warn'); return; }
+    const existing = stocks.findIndex(s => s.code === code);
+    if (existing >= 0) {
+      // merge: weighted avg cost
+      const s = stocks[existing];
+      const newShares = s.shares + shares;
+      const newCost   = (s.shares * s.cost + shares * cost) / newShares;
+      stocks[existing] = { ...s, shares: newShares, cost: parseFloat(newCost.toFixed(2)), price, realized: (s.realized||0)+realized };
+      showToast(`✅ 已合併更新 ${code} ${name}`);
+    } else {
+      stocks.push({ code, name, shares, cost, price, realized });
+      showToast(`✅ 已新增 ${code} ${name}`);
+    }
+    save(); closeModal(); renderTable(); renderCharts();
+    return;
+  }
+
+  // ── BUY
+  if (currentTxMode === 'buy') {
+    const txPrice  = parseFloat(document.getElementById('f-tx-price').value);
+    const txShares = parseFloat(document.getElementById('f-tx-shares').value);
+    const curPrice = parseFloat(document.getElementById('f-price').value) || txPrice;
+    if (isNaN(txPrice) || isNaN(txShares) || txShares <= 0) { showToast('⚠️ 請填寫買入價格與股數', 'warn'); return; }
+
+    const existing = stocks.findIndex(s => s.code === code);
+    if (existing >= 0) {
+      const s = stocks[existing];
+      const newShares = s.shares + txShares;
+      const newCost   = (s.shares * s.cost + txShares * txPrice) / newShares;
+      stocks[existing] = { ...s, shares: newShares, cost: parseFloat(newCost.toFixed(2)), price: curPrice || s.price };
+    } else {
+      stocks.push({ code, name, shares: txShares, cost: txPrice, price: curPrice || txPrice, realized: 0 });
+    }
+    // log
+    txLog.unshift({ type:'buy', code, name, shares:txShares, price:txPrice, total:Math.round(txPrice*txShares), date:txDate });
+    saveTxLog(); renderTxLog();
+    save(); closeModal(); renderTable(); renderCharts();
+    showToast(`📈 買入 ${code} ${txShares.toLocaleString()} 股 @ $${txPrice}`);
+    return;
+  }
+
+  // ── SELL
+  if (currentTxMode === 'sell') {
+    const txPrice  = parseFloat(document.getElementById('f-tx-price').value);
+    const txShares = parseFloat(document.getElementById('f-tx-shares').value);
+    const realized = parseFloat(document.getElementById('f-realized').value) || 0;
+    if (isNaN(txPrice) || isNaN(txShares) || txShares <= 0) { showToast('⚠️ 請填寫賣出價格與股數', 'warn'); return; }
+
+    const existing = stocks.findIndex(s => s.code === code);
+    if (existing < 0) { showToast(`⚠️ 找不到 ${code} 的持股`, 'warn'); return; }
+    const s = stocks[existing];
+    if (txShares > s.shares) { showToast(`⚠️ 賣出股數 (${txShares}) 超過持有股數 (${s.shares})`, 'warn'); return; }
+
+    const pnl = Math.round((txPrice - s.cost) * txShares) + realized;
+    const remainShares = s.shares - txShares;
+
+    if (remainShares === 0) {
+      stocks.splice(existing, 1); // fully sold out
+    } else {
+      stocks[existing] = { ...s, shares: remainShares, realized: (s.realized||0) + pnl };
+    }
+    // log
+    txLog.unshift({ type:'sell', code, name, shares:txShares, price:txPrice, total:Math.round(txPrice*txShares), pnl, date:txDate });
+    saveTxLog(); renderTxLog();
+    save(); closeModal(); renderTable(); renderCharts();
+    const msg = remainShares === 0
+      ? `📉 已全數賣出 ${code}，損益 ${pnl>=0?'+':''}$${Math.abs(pnl).toLocaleString()}`
+      : `📉 賣出 ${code} ${txShares.toLocaleString()} 股，剩 ${remainShares.toLocaleString()} 股`;
+    showToast(msg, pnl < 0 ? 'warn' : 'success');
+    return;
+  }
+}
+
+
+// ── render transaction log ──
+function renderTxLog() {
+  const wrap = document.getElementById('txLogWrap');
+  const body = document.getElementById('txLogBody');
+  if (!txLog.length) { if(wrap) wrap.style.display='none'; return; }
+  if(wrap) wrap.style.display='';
+  body.innerHTML = txLog.slice(0,30).map(t => {
+    const isBuy = t.type === 'buy';
+    const pnlStr = t.pnl != null
+      ? ` <span style="color:${t.pnl>=0?'var(--green)':'var(--red)'};">${t.pnl>=0?'+':''}$${Math.abs(t.pnl).toLocaleString()}</span>`
+      : '';
+    return `<div class="tx-item">
+      <div class="tx-type-dot ${isBuy?'tx-buy':'tx-sell'}"></div>
+      <div class="tx-code">${t.code}</div>
+      <div class="tx-desc">${t.name} ${isBuy?'買入':'賣出'} ${t.shares.toLocaleString()} 股 @ $${t.price}${pnlStr}</div>
+      <div class="tx-amt">$${t.total.toLocaleString()}</div>
+      <div class="tx-date">${t.date||''}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── mobile stock cards ──
+function renderStockCards() {
+  const el = document.getElementById('stockCardList');
+  if (!el) return;
+  if (!stocks.length) { el.innerHTML=''; return; }
+  el.innerHTML = stocks.map((s,i) => {
+    const val = s.shares * s.price;
+    const pnl = (s.price - s.cost) * s.shares;
+    const pct = s.cost > 0 ? ((s.price - s.cost)/s.cost*100) : 0;
+    const cls = pnl >= 0 ? 'pos' : 'neg';
+    return `<div class="stock-card-item">
+      <div class="stock-card-top">
+        <div class="stock-card-meta">
+          <div class="stock-card-code">${s.code}</div>
+          <div class="stock-card-name">${s.name}</div>
+        </div>
+        <div class="stock-card-pnl">
+          <div class="stock-card-pnl-val ${cls}">${pnl>=0?'+':''}$${Math.round(Math.abs(pnl)).toLocaleString()}</div>
+          <div class="stock-card-pnl-pct ${cls}">${pct>=0?'+':''}${pct.toFixed(2)}%</div>
+        </div>
+      </div>
+      <div class="stock-card-grid">
+        <div class="stock-card-field"><div class="stock-card-field-label">股數</div><div class="stock-card-field-val">${s.shares.toLocaleString()}</div></div>
+        <div class="stock-card-field"><div class="stock-card-field-label">成本</div><div class="stock-card-field-val">$${s.cost}</div></div>
+        <div class="stock-card-field"><div class="stock-card-field-label">現價</div><div class="stock-card-field-val">$${s.price}</div></div>
+        <div class="stock-card-field" style="grid-column:1/-1;"><div class="stock-card-field-label">市值</div><div class="stock-card-field-val" style="color:var(--accent);">$${val.toLocaleString()}</div></div>
+      </div>
+      <div class="stock-card-actions">
+        <button class="btn" onclick="openAddModal('buy');document.getElementById('f-code').value='${s.code}';document.getElementById('f-name').value='${s.name}';autoFillName();">📈 買入</button>
+        <button class="btn danger" onclick="openAddModal('sell');document.getElementById('f-code').value='${s.code}';document.getElementById('f-name').value='${s.name}';autoFillName();">📉 賣出</button>
+        <button class="btn" onclick="openEditModal(${i})">✏️</button>
+        <button class="icon-btn del" onclick="deleteStock(${i})">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function deleteStock(i) {
