@@ -126,7 +126,7 @@ animation: slideUp .5s ease both;
 @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
 
 .s-card {
-background: var(–card);
+background: #111e33;
 border: 1px solid var(–border);
 border-radius: 12px;
 padding: 20px;
@@ -163,8 +163,8 @@ font-family: var(–mono);
 font-size: 11px;
 margin-top: 6px;
 }
-.pos { color: var(–green); }
-.neg { color: var(–red); }
+.pos { color: #34d399 !important; }
+.neg { color: #f87171 !important; }
 
 /* ── content pages ── */
 .page { display: none; }
@@ -173,7 +173,7 @@ margin-top: 6px;
 /* ── two-col layout ── */
 .two-col { display: grid; grid-template-columns: 1fr 380px; gap: 20px; }
 .chart-card {
-background: var(–card);
+background: #111e33;
 border: 1px solid var(–border);
 border-radius: 12px;
 padding: 20px;
@@ -198,7 +198,7 @@ box-shadow: 0 0 8px rgba(59,158,255,.5);
 
 /* ── stock table ── */
 .table-wrap {
-background: var(–card);
+background: #111e33;
 border: 1px solid var(–border);
 border-radius: 12px;
 overflow: hidden;
@@ -265,7 +265,7 @@ padding: 13px 16px;
 font-family: var(–mono);
 font-size: 13px;
 text-align: right;
-color: var(–text);
+color: #e2eaf7;
 }
 td:first-child { text-align: left; }
 .stock-name-cell { display: flex; flex-direction: column; gap: 2px; }
@@ -676,40 +676,116 @@ text-align: center;
 .tx-mode-btn.active { background: var(–accent); border-color: var(–accent); color: #fff; font-weight: 600; box-shadow: 0 0 12px rgba(59,158,255,.3); }
 .tx-mode-btn.sell-active { background: var(–red); border-color: var(–red); color: #fff; box-shadow: 0 0 12px rgba(248,113,113,.3); }
 
-/* ── mobile stock card view (replaces table on small screens) ── */
+/* ── mobile stock card view ── */
 .stock-cards { display: none; }
-@media (max-width: 640px) {
-.stock-cards { display: flex; flex-direction: column; gap: 10px; }
-.table-wrap table { display: none; }
+
+/* 卡片本身樣式不放在 @media 裡，確保 var() 能正確繼承 */
 .stock-card-item {
-background: var(–card);
-border: 1px solid var(–border);
-border-radius: 12px;
-padding: 14px 16px;
-transition: border-color .2s;
+background: #111e33;
+border: 1px solid #1e3050;
+border-radius: 14px;
+padding: 16px;
+transition: border-color .2s, background .2s;
 }
-.stock-card-item:hover { border-color: var(–border-hi); }
+.stock-card-item:hover { border-color: #2a4470; background: #162440; }
 .stock-card-top {
 display: flex; justify-content: space-between; align-items: flex-start;
-margin-bottom: 10px;
+margin-bottom: 14px;
+padding-bottom: 12px;
+border-bottom: 1px solid #1e3050;
 }
-.stock-card-meta { display: flex; flex-direction: column; gap: 2px; }
-.stock-card-code { font-family: var(–mono); font-size: 16px; font-weight: 700; color: var(–accent); }
-.stock-card-name { font-family: var(–sans); font-size: 12px; color: var(–text-dim); }
+.stock-card-meta { display: flex; flex-direction: column; gap: 4px; }
+.stock-card-code {
+font-family: ‘IBM Plex Mono’, monospace;
+font-size: 20px; font-weight: 700;
+color: #3b9eff;
+letter-spacing: .04em;
+}
+.stock-card-name {
+font-family: ‘Noto Sans TC’, sans-serif;
+font-size: 13px; color: #94a8cc;
+}
 .stock-card-pnl  { text-align: right; }
-.stock-card-pnl-val { font-family: var(–mono); font-size: 15px; font-weight: 600; }
-.stock-card-pnl-pct { font-family: var(–mono); font-size: 11px; margin-top: 2px; }
+.stock-card-pnl-val {
+font-family: ‘IBM Plex Mono’, monospace;
+font-size: 18px; font-weight: 700;
+line-height: 1.2;
+}
+.stock-card-pnl-pct {
+font-family: ‘IBM Plex Mono’, monospace;
+font-size: 12px; margin-top: 3px;
+}
 .stock-card-grid {
 display: grid; grid-template-columns: 1fr 1fr 1fr;
-gap: 8px 4px;
-margin-bottom: 10px;
+gap: 12px 8px;
+margin-bottom: 14px;
 }
-.stock-card-field { display: flex; flex-direction: column; gap: 2px; }
-.stock-card-field-label { font-size: 9px; color: var(–text-dim); font-family: var(–mono); letter-spacing: .08em; text-transform: uppercase; }
-.stock-card-field-val   { font-size: 13px; color: var(–text); font-family: var(–mono); font-weight: 500; }
-.stock-card-actions { display: flex; gap: 8px; }
-.stock-card-actions .btn { flex: 1; font-size: 12px; padding: 7px; }
+.stock-card-field { display: flex; flex-direction: column; gap: 4px; }
+.stock-card-field-label {
+font-size: 10px; color: #4d6490;
+font-family: ‘IBM Plex Mono’, monospace;
+letter-spacing: .1em; text-transform: uppercase;
 }
+.stock-card-field-val {
+font-size: 14px; color: #e2eaf7;
+font-family: ‘IBM Plex Mono’, monospace;
+font-weight: 600;
+}
+.stock-card-market-val {
+font-size: 15px; color: #3b9eff;
+font-family: ‘IBM Plex Mono’, monospace;
+font-weight: 700;
+}
+.stock-card-actions {
+display: flex; gap: 8px; padding-top: 12px;
+border-top: 1px solid #1e3050;
+}
+.stock-card-actions .btn {
+flex: 1; font-size: 12px; padding: 9px 6px;
+font-weight: 500;
+border-radius: 8px;
+}
+/* buy btn in card */
+.stock-card-actions .btn-card-buy {
+background: rgba(52,211,153,.12);
+border: 1px solid rgba(52,211,153,.35);
+color: #34d399;
+}
+.stock-card-actions .btn-card-buy:hover { background: rgba(52,211,153,.22); }
+/* sell btn in card */
+.stock-card-actions .btn-card-sell {
+background: rgba(248,113,113,.12);
+border: 1px solid rgba(248,113,113,.35);
+color: #f87171;
+}
+.stock-card-actions .btn-card-sell:hover { background: rgba(248,113,113,.22); }
+/* edit/del btn */
+.stock-card-actions .btn-card-edit {
+background: rgba(59,158,255,.1);
+border: 1px solid rgba(59,158,255,.25);
+color: #7dd3fc;
+flex: 0 0 44px;
+}
+.stock-card-actions .btn-card-del {
+background: transparent;
+border: 1px solid #1e3050;
+color: #4d6490;
+flex: 0 0 44px;
+}
+.stock-card-actions .btn-card-del:hover { color: #f87171; border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.08); }
+
+@media (max-width: 640px) {
+.stock-cards { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.table-wrap > table,
+.table-wrap > thead { display: none; }
+}
+
+/* summary cards: 顯示上強制文字顏色 */
+.s-card-label { color: #4d6490 !important; }
+.s-card-value { color: #e2eaf7 !important; }
+.s-card-sub   { color: #4d6490 !important; }
+.s-card-value.pos, .pos { color: #34d399 !important; }
+.s-card-value.neg, .neg { color: #f87171 !important; }
 
 /* ── transaction history log ── */
 .tx-log {
@@ -747,8 +823,64 @@ width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
 .tx-desc { flex:1; color:var(–text-mid); }
 .tx-amt  { color:var(–text); font-weight:500; }
 .tx-date { color:var(–text-dim); font-size:10px; }
-</style>
 
+/* ══ FORCE EXPLICIT COLORS (override var() for mobile compat) ══ */
+html, body { background: #080e1a !important; color: #e2eaf7 !important; }
+.s-card { background: #111e33 !important; border-color: #1e3050 !important; }
+.s-card-label { color: #94a8cc !important; font-family: ‘IBM Plex Mono’,monospace !important; }
+.s-card-value { color: #e2eaf7 !important; font-family: ‘IBM Plex Mono’,monospace !important; }
+.s-card-value.empty-val { color: #2a3f60 !important; }
+.s-card-sub   { color: #94a8cc !important; font-family: ‘IBM Plex Mono’,monospace !important; }
+.pos { color: #34d399 !important; }
+.neg { color: #f87171 !important; }
+.chart-card { background: #111e33 !important; border-color: #1e3050 !important; }
+.chart-card h3 { color: #94a8cc !important; }
+.table-wrap { background: #111e33 !important; }
+.table-header { background: rgba(8,14,26,.6) !important; }
+.table-header h3 { color: #94a8cc !important; }
+thead th { color: #4d6490 !important; background: rgba(8,14,26,.5) !important; }
+td { color: #e2eaf7 !important; }
+.stock-code { color: #3b9eff !important; }
+.stock-name { color: #94a8cc !important; }
+.btn { color: #94a8cc !important; border-color: #1e3050 !important; }
+.btn:hover { background: #1e3050 !important; color: #e2eaf7 !important; }
+.btn.primary { background: #3b9eff !important; border-color: #3b9eff !important; color: #fff !important; }
+.btn.primary:hover { background: #60b4ff !important; }
+.btn.danger { color: #f87171 !important; border-color: rgba(248,113,113,.35) !important; }
+.btn.danger:hover { background: rgba(248,113,113,.12) !important; }
+.icon-btn { color: #4d6490 !important; border-color: #1e3050 !important; background: transparent !important; }
+.icon-btn:hover { color: #e2eaf7 !important; background: #1e3050 !important; }
+.icon-btn.del:hover { color: #f87171 !important; border-color: rgba(248,113,113,.4) !important; background: rgba(248,113,113,.12) !important; }
+.nav-tabs { background: #0d1526 !important; border-color: #1e3050 !important; }
+.nav-tab { color: #4d6490 !important; }
+.nav-tab:hover:not(.active) { color: #e2eaf7 !important; background: #1e3050 !important; }
+.nav-tab.active { background: #3b9eff !important; color: #fff !important; }
+.modal-overlay { background: rgba(0,0,0,.75) !important; }
+.modal { background: #0d1526 !important; border-color: #1e3050 !important; }
+.modal h2 { color: #3b9eff !important; }
+.form-row label { color: #94a8cc !important; }
+.form-row input, .form-row select, .form-row textarea {
+background: #080e1a !important;
+border-color: #1e3050 !important;
+color: #e2eaf7 !important;
+}
+.form-row input:focus, .form-row select:focus { border-color: #3b9eff !important; }
+.tx-mode-btn { color: #4d6490 !important; border-color: #1e3050 !important; background: transparent !important; }
+.tx-mode-btn:hover { color: #e2eaf7 !important; background: #111e33 !important; }
+.tx-mode-btn.active { background: #3b9eff !important; color: #fff !important; }
+.tx-mode-btn.sell-active { background: #f87171 !important; color: #fff !important; }
+.history-item { background: #111e33 !important; border-color: #1e3050 !important; }
+.history-date { color: #4d6490 !important; }
+.history-val  { color: #3b9eff !important; }
+.empty { color: #4d6490 !important; }
+.save-status { background: #0d1526 !important; border-color: #1e3050 !important; color: #4d6490 !important; }
+.save-status.saved { color: #3b9eff !important; border-color: rgba(59,158,255,.3) !important; }
+.logo { color: #3b9eff !important; }
+.header-time { color: #4d6490 !important; }
+header { background: rgba(8,14,26,.95) !important; border-color: #1e3050 !important; }
+main { position: relative; z-index: 5; }
+
+</style>
 </head>
 <body>
 
@@ -1735,11 +1867,20 @@ function renderStockCards() {
   const el = document.getElementById('stockCardList');
   if (!el) return;
   if (!stocks.length) { el.innerHTML=''; return; }
+
+  const pnlColor = v => v >= 0 ? '#34d399' : '#f87171';
+  const signStr  = v => v >= 0 ? '+' : '';
+
   el.innerHTML = stocks.map((s,i) => {
     const val = s.shares * s.price;
     const pnl = (s.price - s.cost) * s.shares;
-    const pct = s.cost > 0 ? ((s.price - s.cost)/s.cost*100) : 0;
-    const cls = pnl >= 0 ? 'pos' : 'neg';
+    const pct = s.cost > 0 ? ((s.price - s.cost) / s.cost * 100) : 0;
+    const pc  = pnlColor(pnl);
+
+    // encode for inline onclick safety
+    const codeEnc = s.code.replace(/'/g,"\'");
+    const nameEnc = s.name.replace(/'/g,"\'");
+
     return `<div class="stock-card-item">
       <div class="stock-card-top">
         <div class="stock-card-meta">
@@ -1747,24 +1888,48 @@ function renderStockCards() {
           <div class="stock-card-name">${s.name}</div>
         </div>
         <div class="stock-card-pnl">
-          <div class="stock-card-pnl-val ${cls}">${pnl>=0?'+':''}$${Math.round(Math.abs(pnl)).toLocaleString()}</div>
-          <div class="stock-card-pnl-pct ${cls}">${pct>=0?'+':''}${pct.toFixed(2)}%</div>
+          <div class="stock-card-pnl-val" style="color:${pc};">${signStr(pnl)}$${Math.round(Math.abs(pnl)).toLocaleString()}</div>
+          <div class="stock-card-pnl-pct" style="color:${pc};">${signStr(pct)}${pct.toFixed(2)}%</div>
         </div>
       </div>
       <div class="stock-card-grid">
-        <div class="stock-card-field"><div class="stock-card-field-label">股數</div><div class="stock-card-field-val">${s.shares.toLocaleString()}</div></div>
-        <div class="stock-card-field"><div class="stock-card-field-label">成本</div><div class="stock-card-field-val">$${s.cost}</div></div>
-        <div class="stock-card-field"><div class="stock-card-field-label">現價</div><div class="stock-card-field-val">$${s.price}</div></div>
-        <div class="stock-card-field" style="grid-column:1/-1;"><div class="stock-card-field-label">市值</div><div class="stock-card-field-val" style="color:var(--accent);">$${val.toLocaleString()}</div></div>
+        <div class="stock-card-field">
+          <div class="stock-card-field-label">股數</div>
+          <div class="stock-card-field-val">${s.shares.toLocaleString()}</div>
+        </div>
+        <div class="stock-card-field">
+          <div class="stock-card-field-label">成本均價</div>
+          <div class="stock-card-field-val">$${s.cost.toLocaleString()}</div>
+        </div>
+        <div class="stock-card-field">
+          <div class="stock-card-field-label">現價</div>
+          <div class="stock-card-field-val">$${s.price.toLocaleString()}</div>
+        </div>
+        <div class="stock-card-field" style="grid-column:1/-1;">
+          <div class="stock-card-field-label">市值</div>
+          <div class="stock-card-market-val">$${val.toLocaleString()}</div>
+        </div>
       </div>
       <div class="stock-card-actions">
-        <button class="btn" onclick="openAddModal('buy');document.getElementById('f-code').value='${s.code}';document.getElementById('f-name').value='${s.name}';autoFillName();">📈 買入</button>
-        <button class="btn danger" onclick="openAddModal('sell');document.getElementById('f-code').value='${s.code}';document.getElementById('f-name').value='${s.name}';autoFillName();">📉 賣出</button>
-        <button class="btn" onclick="openEditModal(${i})">✏️</button>
-        <button class="icon-btn del" onclick="deleteStock(${i})">🗑</button>
+        <button class="btn btn-card-buy" onclick="quickTx('buy',${i})">📈 買入</button>
+        <button class="btn btn-card-sell" onclick="quickTx('sell',${i})">📉 賣出</button>
+        <button class="btn btn-card-edit" onclick="openEditModal(${i})">✏️</button>
+        <button class="btn btn-card-del" onclick="deleteStock(${i})">🗑</button>
       </div>
     </div>`;
   }).join('');
+}
+
+// quick open modal pre-filled for a specific stock
+function quickTx(mode, i) {
+  const s = stocks[i];
+  openAddModal(mode);
+  setTimeout(() => {
+    document.getElementById('f-code').value = s.code;
+    document.getElementById('f-name').value = s.name;
+    if (mode === 'sell') document.getElementById('f-tx-price').value = s.price;
+    autoFillName();
+  }, 50);
 }
 
 function deleteStock(i) {
