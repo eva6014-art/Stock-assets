@@ -525,7 +525,26 @@ border-top: 1px solid var(–border);
 margin: 20px 0;
 }
 
-/* ── toast ── */
+/* ── save status indicator ── */
+.save-status {
+display: flex; align-items: center; gap: 6px;
+font-family: var(–mono); font-size: 10px;
+color: var(–text-dim);
+padding: 4px 10px;
+border: 1px solid var(–border);
+border-radius: 20px;
+background: var(–surface);
+transition: all .3s;
+white-space: nowrap;
+}
+.save-status.saving { color: #ffc107; border-color: rgba(255,193,7,.3); }
+.save-status.saved  { color: var(–green); border-color: rgba(0,229,160,.3); }
+.save-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink:0; }
+
+/* ── empty summary cards ── */
+.s-card-value.empty-val { color: var(–muted); font-size: 18px; }
+
+/* ── toast (upgrade: support types) ── */
 .toast {
 position: fixed; bottom: 28px; right: 28px; z-index: 200;
 background: var(–card);
@@ -541,6 +560,9 @@ transition: all .3s;
 pointer-events: none;
 }
 .toast.show { transform: none; opacity: 1; }
+.toast.warn  { border-color: #ffc107; color: #ffc107; }
+.toast.error { border-color: var(–red); color: var(–red); }
+.toast { max-width: 320px; }
 
 /* ── responsive ── */
 @media (max-width: 900px) {
@@ -624,6 +646,7 @@ table { min-width: 580px; }
     <button class="nav-tab" onclick="showPage('history')">歷史</button>
   </div>
   <div class="header-time" id="clockEl">--:--:--</div>
+  <div class="save-status" id="saveStatus"><span class="save-dot"></span><span id="saveStatusText">已載入</span></div>
 </header>
 
 <main>
@@ -1012,89 +1035,152 @@ table { min-width: 580px; }
 <div class="toast" id="toast"></div>
 
 <script>
-// ── state ──
-let stocks = JSON.parse(localStorage.getItem('tw_stocks') || '[]');
-let snapshots = JSON.parse(localStorage.getItem('tw_snapshots') || '[]');
+// ════════════════════════════════════════════
+// STATE  — single source of truth
+// ════════════════════════════════════════════
+const STOCKS_KEY    = 'tw_stocks_v2';
+const SNAPSHOTS_KEY = 'tw_snapshots';
+const DIVS_KEY      = 'tw_dividends';
+const SEEDED_KEY    = 'tw_seeded';   // ← prevents re-injection of demo data
+
+let stocks    = JSON.parse(localStorage.getItem(STOCKS_KEY)    || '[]');
+let snapshots = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) || '[]');
 let editIndex = -1;
 let lineChartInst, pieChartInst, historyChartInst;
 
 // ── helpers ──
-const fmt = (n, d=0) => n.toLocaleString('zh-TW', {minimumFractionDigits:d, maximumFractionDigits:d});
+const fmt      = (n, d=0) => (isFinite(n) ? n : 0).toLocaleString('zh-TW', {minimumFractionDigits:d, maximumFractionDigits:d});
 const fmtMoney = n => '$' + fmt(Math.abs(n), 0);
-const sign = n => n >= 0 ? '+' : '-';
+const sign     = n => n >= 0 ? '+' : '-';
 
-function save() {
-  localStorage.setItem('tw_stocks', JSON.stringify(stocks));
+// ── save status UI ──
+let saveTimer = null;
+function setSaveStatus(state) {
+  const el = document.getElementById('saveStatus');
+  const tx = document.getElementById('saveStatusText');
+  el.className = 'save-status ' + state;
+  if (state === 'saving') tx.textContent = '儲存中...';
+  if (state === 'saved')  tx.textContent = '已儲存 ' + new Date().toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'});
 }
-function showToast(msg) {
+
+// ── persistence: SINGLE unified save that always reflects current state ──
+function save(skipStatus = false) {
+  if (!skipStatus) setSaveStatus('saving');
+  // Guard: never write demo data over a real empty state
+  localStorage.setItem(STOCKS_KEY, JSON.stringify(stocks));
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => setSaveStatus('saved'), 400);
+}
+
+// ── typed toast ──
+let toastTimer = null;
+function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+  t.className = `toast show${type === 'warn' ? ' warn' : type === 'error' ? ' error' : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
 // ── clock ──
 function updateClock() {
-  const now = new Date();
-  document.getElementById('clockEl').textContent =
-    now.toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const el = document.getElementById('clockEl');
+  if (el) el.textContent = new Date().toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
 }
 setInterval(updateClock, 1000); updateClock();
 
 // ── nav ──
-function showPage(id, focusExport = false) {
+function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
-  // highlight correct nav tab
   document.querySelectorAll('.nav-tab').forEach(t => {
-    if (t.getAttribute('onclick') && t.getAttribute('onclick').includes(`'${id}'`)) t.classList.add('active');
+    if (t.getAttribute('onclick')?.includes(`'${id}'`)) t.classList.add('active');
   });
   if (id === 'dashboard') renderCharts();
-  if (id === 'history') renderHistory();
-  if (id === 'dividend') renderDividendPage();
-  if (id === 'import') { updatePreview(); }
+  if (id === 'history')   renderHistory();
+  if (id === 'dividend')  renderDividendPage();
+  if (id === 'import')    updatePreview();
 }
 
-// ── summary ──
+// ════════════════════════════════════════════
+// SUMMARY CARDS — always recalculate from stocks[]
+// Bug fix: was only called inside renderTable when stocks.length > 0
+// ════════════════════════════════════════════
 function calcSummary() {
   let totalVal = 0, totalCost = 0, realized = 0;
   stocks.forEach(s => {
-    totalVal += s.shares * s.price;
-    totalCost += s.shares * s.cost;
-    realized += s.realized || 0;
+    totalVal  += (s.shares || 0) * (s.price || 0);
+    totalCost += (s.shares || 0) * (s.cost  || 0);
+    realized  += s.realized || 0;
   });
   const pnl = totalVal - totalCost;
   const pct = totalCost > 0 ? (pnl / totalCost * 100) : 0;
+  const isEmpty = stocks.length === 0;
 
-  document.getElementById('sum-total').textContent = fmtMoney(totalVal);
-  document.getElementById('sum-cost').textContent = fmtMoney(totalCost);
-  document.getElementById('sum-count').textContent = stocks.length + ' 檔股票';
-  document.getElementById('sum-realized').textContent = (realized >= 0 ? '+' : '-') + fmtMoney(realized);
-  document.getElementById('sum-pnl').textContent =
-    `${sign(pnl)}${fmtMoney(pnl)} (${sign(pct)}${Math.abs(pct).toFixed(2)}%)`;
-  document.getElementById('sum-pnl').className = 's-card-sub ' + (pnl >= 0 ? 'pos' : 'neg');
+  // Total asset
+  const sumTotal = document.getElementById('sum-total');
+  sumTotal.textContent = isEmpty ? '—' : fmtMoney(totalVal);
+  sumTotal.className = 's-card-value' + (isEmpty ? ' empty-val' : '');
 
-  // today placeholder (no real API)
-  const todayEst = totalVal * (Math.random() * .02 - .005);
-  document.getElementById('sum-today').textContent = (todayEst >= 0 ? '+' : '-') + fmtMoney(todayEst);
-  document.getElementById('sum-today').className = 's-card-value ' + (todayEst >= 0 ? 'pos' : 'neg');
+  // Total cost
+  const sumCost = document.getElementById('sum-cost');
+  sumCost.textContent = isEmpty ? '—' : fmtMoney(totalCost);
+  sumCost.className = 's-card-value' + (isEmpty ? ' empty-val' : '');
+
+  document.getElementById('sum-count').textContent = isEmpty ? '尚無持股' : `${stocks.length} 檔股票`;
+
+  // Realized PnL
+  const sumReal = document.getElementById('sum-realized');
+  sumReal.textContent = isEmpty ? '—' : (realized >= 0 ? '+' : '-') + fmtMoney(realized);
+  sumReal.className   = 's-card-value' + (isEmpty ? ' empty-val' : realized >= 0 ? ' pos' : ' neg');
+
+  // Unrealized PnL
+  const sumPnl = document.getElementById('sum-pnl');
+  sumPnl.textContent = isEmpty
+    ? '請新增或匯入持股'
+    : `${sign(pnl)}${fmtMoney(pnl)} (${sign(pct)}${Math.abs(pct).toFixed(2)}%)`;
+  sumPnl.className = 's-card-sub ' + (isEmpty ? '' : pnl >= 0 ? 'pos' : 'neg');
+
+  // Today change — stable per session (not random every call)
+  if (!calcSummary._todayPct) calcSummary._todayPct = (Math.random() * 0.02 - 0.005);
+  const todayEst = totalVal * calcSummary._todayPct;
+  const sumToday = document.getElementById('sum-today');
+  sumToday.textContent = isEmpty ? '—' : (todayEst >= 0 ? '+' : '-') + fmtMoney(Math.abs(todayEst));
+  sumToday.className   = 's-card-value' + (isEmpty ? ' empty-val' : todayEst >= 0 ? ' pos' : ' neg');
   document.getElementById('sum-today-pct').textContent = '模擬示意（非即時）';
-  document.getElementById('sum-today-pct').className = 's-card-sub';
+  document.getElementById('sum-today-pct').className   = 's-card-sub';
 }
 
-// ── table ──
+// ════════════════════════════════════════════
+// RENDER TABLE
+// Bug fix: always call calcSummary regardless of stocks.length
+// ════════════════════════════════════════════
 function renderTable() {
   const tbody = document.getElementById('stockTableBody');
+
+  // Always recalculate summary — even when empty
+  calcSummary();
+
   if (stocks.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📭</div>尚無持股，點擊「新增持股」開始</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8">
+      <div class="empty">
+        <div class="empty-icon">📭</div>
+        <div style="margin-bottom:12px;">尚無持股資料</div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn primary" onclick="openAddModal()">＋ 新增持股</button>
+          <button class="btn" onclick="showPage('import')">📥 匯入 CSV</button>
+        </div>
+      </div>
+    </td></tr>`;
     return;
   }
+
   tbody.innerHTML = stocks.map((s, i) => {
     const val = s.shares * s.price;
     const pnl = (s.price - s.cost) * s.shares;
-    const pct = ((s.price - s.cost) / s.cost * 100);
-    const cls = pnl >= 0 ? 'pos' : 'neg';
+    const pct = s.cost > 0 ? ((s.price - s.cost) / s.cost * 100) : 0;
+    const cls   = pnl >= 0 ? 'pos' : 'neg';
     const badge = pnl >= 0
       ? `<span class="badge badge-green">▲ 獲利</span>`
       : `<span class="badge badge-red">▼ 虧損</span>`;
@@ -1119,7 +1205,6 @@ function renderTable() {
       </td>
     </tr>`;
   }).join('');
-  calcSummary();
 }
 
 // ── charts ──
@@ -1262,19 +1347,20 @@ function saveStock() {
   const price = parseFloat(document.getElementById('f-price').value);
   const realized = parseFloat(document.getElementById('f-realized').value) || 0;
   if (!code || !name || isNaN(shares) || isNaN(cost) || isNaN(price)) {
-    showToast('⚠️ 請填寫完整資訊'); return;
+    showToast('⚠️ 請填寫完整資訊', 'warn'); return;
   }
   const entry = { code, name, shares, cost, price, realized };
   if (editIndex >= 0) { stocks[editIndex] = entry; } else { stocks.push(entry); }
   save(); closeModal(); renderTable(); renderCharts();
-  showToast(editIndex >= 0 ? '✅ 已更新持股' : '✅ 已新增持股');
+  showToast(editIndex >= 0 ? '✅ 持股已更新' : `✅ 已新增 ${code} ${name}`);
 }
 
 function deleteStock(i) {
-  if (!confirm(`確定刪除 ${stocks[i].code} ${stocks[i].name}？`)) return;
+  const s = stocks[i];
+  if (!confirm(`確定刪除 ${s.code} ${s.name}？\n此操作無法復原。`)) return;
   stocks.splice(i, 1);
   save(); renderTable(); renderCharts();
-  showToast('🗑 已刪除');
+  showToast(`🗑 已刪除 ${s.code} ${s.name}，共 ${stocks.length} 檔持股`, stocks.length === 0 ? 'warn' : 'success');
 }
 
 // ── EXPORT ENGINE ──
@@ -1436,50 +1522,55 @@ function handleImportFile(e) {
   reader.onload = ev => {
     const text = ev.target.result;
     let imported = [];
-    // detect JSON (our own export format)
     if (file.name.endsWith('.json') || text.trim().startsWith('{')) {
       try {
         const obj = JSON.parse(text);
-        const arr = obj.portfolio || obj; // support array or wrapped
+        const arr = obj.portfolio || obj;
         if (Array.isArray(arr)) {
           imported = arr.map(r => ({
-            code: String(r['股票代號'] || r.code || ''),
-            name: String(r['股票名稱'] || r.name || ''),
-            shares: parseFloat(r['股數'] || r.shares) || 0,
-            cost: parseFloat(r['成本均價'] || r.cost) || 0,
-            price: parseFloat(r['現價'] || r.price) || 0,
+            code:     String(r['股票代號'] || r.code || ''),
+            name:     String(r['股票名稱'] || r.name || ''),
+            shares:   parseFloat(r['股數']   || r.shares)   || 0,
+            cost:     parseFloat(r['成本均價']|| r.cost)     || 0,
+            price:    parseFloat(r['現價']    || r.price)    || 0,
             realized: parseFloat(r['已實現損益'] || r.realized) || 0,
           })).filter(r => r.code && r.shares > 0);
         }
-      } catch { showToast('⚠️ JSON 格式錯誤'); return; }
+      } catch { showToast('⚠️ JSON 格式錯誤', 'error'); return; }
     } else {
       imported = parseCSV(text);
     }
-    if (imported.length === 0) { showToast('⚠️ 無法解析，請確認格式'); return; }
-    if (confirm(`偵測到 ${imported.length} 筆資料。\n\n按「確定」覆蓋現有持股，\n按「取消」則附加合併。`)) {
+    if (!imported.length) { showToast('⚠️ 無法解析，請確認格式', 'warn'); return; }
+    if (confirm(`偵測到 ${imported.length} 筆資料。\n\n「確定」= 覆蓋現有持股\n「取消」= 附加合併`)) {
       stocks = imported;
     } else {
-      stocks.push(...imported);
+      // Avoid duplicates by code
+      imported.forEach(imp => {
+        const existing = stocks.findIndex(s => s.code === imp.code);
+        if (existing >= 0) stocks[existing] = imp; else stocks.push(imp);
+      });
     }
-    save(); renderTable(); updatePreview();
-    showToast(`✅ 成功匯入 ${imported.length} 筆`);
+    save(); renderTable(); renderCharts(); updatePreview();
+    showToast(`✅ 成功匯入 ${imported.length} 筆持股，投資組合已更新`);
     showPage('holdings');
   };
   reader.readAsText(file, 'UTF-8');
 }
 
-// keep old name alias
 const handleCSVFile = handleImportFile;
 
 function importFromPaste() {
   const text = document.getElementById('csvPaste').value;
-  if (!text.trim()) { showToast('⚠️ 請貼上 CSV 內容'); return; }
+  if (!text.trim()) { showToast('⚠️ 請貼上 CSV 內容', 'warn'); return; }
   const imported = parseCSV(text);
-  if (imported.length === 0) { showToast('⚠️ 格式錯誤'); return; }
-  stocks.push(...imported);
-  save(); renderTable();
+  if (!imported.length) { showToast('⚠️ 格式錯誤，請參考範例格式', 'error'); return; }
+  imported.forEach(imp => {
+    const existing = stocks.findIndex(s => s.code === imp.code);
+    if (existing >= 0) stocks[existing] = imp; else stocks.push(imp);
+  });
+  save(); renderTable(); renderCharts();
   document.getElementById('csvPaste').value = '';
-  showToast(`✅ 成功匯入 ${imported.length} 筆`);
+  showToast(`✅ 成功匯入 ${imported.length} 筆，投資組合已更新`);
 }
 
 // ── drag-drop ──
@@ -1898,21 +1989,39 @@ function exportDivJSON() {
   showToast('⬇ dividends JSON 已下載');
 }
 
-// ── init ──
-// add demo data if empty
-if (stocks.length === 0) {
-  stocks = [
-    { code: '2330', name: '台積電', shares: 1000, cost: 520, price: 855, realized: 12000 },
-    { code: '0050', name: '元大台灣50', shares: 3000, cost: 128, price: 148, realized: 5000 },
-    { code: '2317', name: '鴻海', shares: 5000, cost: 98, price: 112, realized: 0 },
-    { code: '2881', name: '富邦金', shares: 2000, cost: 65, price: 71, realized: 3200 },
-    { code: '6505', name: '台塑化', shares: 1000, cost: 80, price: 74, realized: -2000 },
-  ];
-  save();
+// ════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════
+
+// Migrate old localStorage key → new key (one-time)
+if (!localStorage.getItem(STOCKS_KEY) && localStorage.getItem('tw_stocks')) {
+  localStorage.setItem(STOCKS_KEY, localStorage.getItem('tw_stocks'));
+  stocks = JSON.parse(localStorage.getItem(STOCKS_KEY));
 }
 
-if (dividends.length === 0) {
-  const y = new Date().getFullYear();
+// Inject demo data ONLY on very first visit (tracked by SEEDED_KEY)
+// Once seeded, never re-inject — even if user deletes everything
+if (!localStorage.getItem(SEEDED_KEY)) {
+  if (stocks.length === 0) {
+    stocks = [
+      { code: '2330', name: '台積電',     shares: 1000, cost: 520, price: 855, realized: 12000 },
+      { code: '0050', name: '元大台灣50', shares: 3000, cost: 128, price: 148, realized: 5000  },
+      { code: '2317', name: '鴻海',       shares: 5000, cost: 98,  price: 112, realized: 0     },
+      { code: '2881', name: '富邦金',     shares: 2000, cost: 65,  price: 71,  realized: 3200  },
+      { code: '6505', name: '台塑化',     shares: 1000, cost: 80,  price: 74,  realized: -2000 },
+    ];
+    save(true);
+  }
+  localStorage.setItem(SEEDED_KEY, '1');
+}
+
+renderTable();
+renderCharts();
+
+const DIV_SEEDED_KEY = 'tw_divs_seeded';
+if (!localStorage.getItem(DIV_SEEDED_KEY)) {
+  if (dividends.length === 0) {
+    const y = new Date().getFullYear();
   dividends = [
     { id:`div_2330_${y}0718`,  code:'2330', name:'台積電',     type:'cash',  perShare:11.0, shares:1000, total:11000, declarationDate:`${y}-05-16`, exDividendDate:`${y}-07-18`, paymentDate:`${y}-10-09`, status:'paid',      source:'twse',   fiscalYear:y-1, period:'annual',  note:'TWSE 自動抓取', fetchedAt:new Date().toISOString() },
     { id:`div_2330_${y}0115`,  code:'2330', name:'台積電',     type:'cash',  perShare:3.0,  shares:1000, total:3000,  declarationDate:`${y}-01-05`, exDividendDate:`${y}-01-15`, paymentDate:`${y}-04-10`, status:'paid',      source:'manual', fiscalYear:y-1, period:'interim', note:'中期股利', fetchedAt:null },
@@ -1925,7 +2034,9 @@ if (dividends.length === 0) {
     { id:`div_2881_${y-1}0810`,code:'2881', name:'富邦金',     type:'cash',  perShare:2.0,  shares:2000, total:4000,  declarationDate:'',           exDividendDate:`${y-1}-08-10`,paymentDate:`${y-1}-09-25`,status:'paid',     source:'manual', fiscalYear:y-2, period:'annual',  note:'',          fetchedAt:null },
     { id:`div_2330_${y-2}0715`,code:'2330', name:'台積電',     type:'cash',  perShare:8.5,  shares:1000, total:8500,  declarationDate:`${y-2}-05-10`,exDividendDate:`${y-2}-07-15`,paymentDate:`${y-2}-10-08`,status:'paid',    source:'manual', fiscalYear:y-3, period:'annual',  note:'',          fetchedAt:null },
   ];
-  saveDivs();
+    saveDivs();
+  }
+  localStorage.setItem(DIV_SEEDED_KEY, '1');
 }
 
 renderTable();
