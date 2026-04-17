@@ -1035,10 +1035,19 @@ main { position: relative; z-index: 5; }
     <hr class="section-divider">
 
     <!-- 股利匯出 -->
-    <div style="font-size:11px;color:var(--text-dim);font-family:var(--mono);letter-spacing:.08em;margin-bottom:10px;">股利紀錄匯出</div>
+    <div style="font-size:11px;color:#94a8cc;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;margin-bottom:10px;">股利紀錄匯出</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn" style="flex:1;" onclick="exportDivCSV()">⬇ 股利 CSV</button>
       <button class="btn" style="flex:1;" onclick="exportDivJSON()">⬇ 股利 JSON</button>
+    </div>
+
+    <hr class="section-divider">
+
+    <!-- 危險區 -->
+    <div style="font-size:11px;color:#f87171;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;margin-bottom:10px;">⚠️ 重置資料</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn danger" style="flex:1;" onclick="clearAllStocks()">🗑 清除全部持股</button>
+      <button class="btn danger" style="flex:1;" onclick="clearAllDividends()">🗑 清除全部股利</button>
     </div>
   </div>
 
@@ -1132,7 +1141,7 @@ main { position: relative; z-index: 5; }
   <div class="table-header">
     <h3>所有股利紀錄</h3>
     <div class="btn-group">
-      <button class="btn" id="fetchBtn" onclick="fetchTWSEDividends()">🔄 自動抓取</button>
+      <button class="btn" id="fetchBtn" onclick="fetchTWSEDividends()" title="從 TWSE 自動抓取除權息資料（需網路）">🔄 自動抓取 TWSE</button>
       <button class="btn" onclick="exportDivCSV()">⬇ 匯出 CSV</button>
     </div>
   </div>
@@ -1338,7 +1347,6 @@ main { position: relative; z-index: 5; }
 const STOCKS_KEY    = 'tw_stocks_v2';
 const SNAPSHOTS_KEY = 'tw_snapshots';
 const DIVS_KEY      = 'tw_dividends';
-const SEEDED_KEY    = 'tw_seeded';   // ← prevents re-injection of demo data
 
 let stocks    = JSON.parse(localStorage.getItem(STOCKS_KEY)    || '[]');
 let snapshots = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) || '[]');
@@ -1932,6 +1940,22 @@ function quickTx(mode, i) {
   }, 50);
 }
 
+// ── 清除全部持股
+function clearAllStocks() {
+  if (!confirm('確定清除全部持股？\n此操作無法復原。')) return;
+  stocks = [];
+  save(); renderTable(); renderCharts(); updatePreview();
+  showToast('🗑 已清除全部持股', 'warn');
+}
+
+// ── 清除全部股利
+function clearAllDividends() {
+  if (!confirm('確定清除全部股利紀錄？\n此操作無法復原。')) return;
+  dividends = [];
+  saveDivs(); renderDividendPage();
+  showToast('🗑 已清除全部股利紀錄', 'warn');
+}
+
 function deleteStock(i) {
   const s = stocks[i];
   if (!confirm(`確定刪除 ${s.code} ${s.name}？\n此操作無法復原。`)) return;
@@ -2084,11 +2108,22 @@ function parseCSV(text) {
   const imported = [];
   lines.forEach(line => {
     const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
-    if (parts.length >= 5) {
-      const [code, name, shares, cost, price, realized] = parts;
-      if (isNaN(parseFloat(shares))) return; // skip header
-      imported.push({ code, name, shares: parseFloat(shares), cost: parseFloat(cost), price: parseFloat(price), realized: parseFloat(realized) || 0 });
-    }
+    if (parts.length < 3) return;
+    const [code, name, sharesStr, costStr, priceStr, realizedStr] = parts;
+    const shares = parseFloat(sharesStr);
+    const cost   = parseFloat(costStr)  || 0;
+    const price  = parseFloat(priceStr) || 0;
+    // 跳過：標頭行（shares 不是數字）、股數為 0 或空白的行
+    if (isNaN(shares) || shares <= 0) return;
+    if (!code || !name) return;
+    imported.push({
+      code: code.trim(),
+      name: name.trim(),
+      shares,
+      cost,
+      price,
+      realized: parseFloat(realizedStr) || 0
+    });
   });
   return imported;
 }
@@ -2105,30 +2140,37 @@ function handleImportFile(e) {
         const arr = obj.portfolio || obj;
         if (Array.isArray(arr)) {
           imported = arr.map(r => ({
-            code:     String(r['股票代號'] || r.code || ''),
-            name:     String(r['股票名稱'] || r.name || ''),
+            code:     String(r['股票代號'] || r.code || '').trim(),
+            name:     String(r['股票名稱'] || r.name || '').trim(),
             shares:   parseFloat(r['股數']   || r.shares)   || 0,
             cost:     parseFloat(r['成本均價']|| r.cost)     || 0,
             price:    parseFloat(r['現價']    || r.price)    || 0,
             realized: parseFloat(r['已實現損益'] || r.realized) || 0,
-          })).filter(r => r.code && r.shares > 0);
+          })).filter(r => r.code && r.shares > 0);  // ← 自動過濾股數=0
         }
       } catch { showToast('⚠️ JSON 格式錯誤', 'error'); return; }
     } else {
-      imported = parseCSV(text);
+      imported = parseCSV(text);  // parseCSV 已內建過濾股數=0
     }
-    if (!imported.length) { showToast('⚠️ 無法解析，請確認格式', 'warn'); return; }
-    if (confirm(`偵測到 ${imported.length} 筆資料。\n\n「確定」= 覆蓋現有持股\n「取消」= 附加合併`)) {
+    if (!imported.length) {
+      showToast('⚠️ 沒有有效持股資料（股數需 > 0）', 'warn');
+      return;
+    }
+    const names = imported.map(s => s.code + ' ' + s.name).join('\n');
+    const choice = confirm(
+      `讀取到 ${imported.length} 筆有效持股：\n${names}\n\n` +
+      `按「確定」→ 取代全部現有持股\n按「取消」→ 僅新增/更新這些股票`
+    );
+    if (choice) {
       stocks = imported;
     } else {
-      // Avoid duplicates by code
       imported.forEach(imp => {
-        const existing = stocks.findIndex(s => s.code === imp.code);
-        if (existing >= 0) stocks[existing] = imp; else stocks.push(imp);
+        const idx = stocks.findIndex(s => s.code === imp.code);
+        if (idx >= 0) stocks[idx] = imp; else stocks.push(imp);
       });
     }
     save(); renderTable(); renderCharts(); updatePreview();
-    showToast(`✅ 成功匯入 ${imported.length} 筆持股，投資組合已更新`);
+    showToast(`✅ 匯入完成：${imported.length} 筆持股已載入`);
     showPage('holdings');
   };
   reader.readAsText(file, 'UTF-8');
@@ -2139,15 +2181,17 @@ const handleCSVFile = handleImportFile;
 function importFromPaste() {
   const text = document.getElementById('csvPaste').value;
   if (!text.trim()) { showToast('⚠️ 請貼上 CSV 內容', 'warn'); return; }
-  const imported = parseCSV(text);
-  if (!imported.length) { showToast('⚠️ 格式錯誤，請參考範例格式', 'error'); return; }
+  const imported = parseCSV(text); // 已自動過濾 shares=0
+  if (!imported.length) {
+    showToast('⚠️ 沒有有效持股（股數需 > 0，請確認格式）', 'warn'); return;
+  }
   imported.forEach(imp => {
     const existing = stocks.findIndex(s => s.code === imp.code);
     if (existing >= 0) stocks[existing] = imp; else stocks.push(imp);
   });
   save(); renderTable(); renderCharts();
   document.getElementById('csvPaste').value = '';
-  showToast(`✅ 成功匯入 ${imported.length} 筆，投資組合已更新`);
+  showToast(`✅ 匯入 ${imported.length} 筆持股完成`);
 }
 
 // ── drag-drop ──
@@ -2471,68 +2515,149 @@ function deleteDividend(i) {
   saveDivs(); renderDividendPage(); showToast('🗑 已刪除');
 }
 
-// ── TWSE 自動抓取（使用 TWSE 公開 API，不需 API key）
+// ══════════════════════════════════════════════════════
+// 自動抓取股利 — 多來源策略（CORS Proxy → FinMind 公開 → 手動 fallback）
+// ══════════════════════════════════════════════════════
 async function fetchTWSEDividends() {
-  if (!stocks.length) { showToast('⚠️ 請先新增持股'); return; }
+  if (!stocks.length) { showToast('⚠️ 請先新增持股', 'warn'); return; }
   const btn = document.getElementById('fetchBtn');
   btn.innerHTML = '<span class="fetch-loading"></span>抓取中...';
   btn.disabled = true;
 
-  let fetched = 0, skipped = 0;
-  const year = new Date().getFullYear();
+  let fetched = 0, skipped = 0, failed = [];
+  const thisYear = new Date().getFullYear();
+  // 抓近 3 年（今年 + 前兩年）確保歷史資料完整
+  const years = [thisYear, thisYear - 1, thisYear - 2];
 
   for (const stock of stocks) {
-    try {
-      // TWSE 公開除權息查詢 API（不需 key，每日更新，來源為正式公告）
-      const url = `https://www.twse.com.tw/rwd/zh/exRight/TWExRights?strDate=${year}0101&endDate=${year}1231&stockNo=${stock.code}&response=json`;
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const json = await res.json();
-      if (json.stat !== 'OK' || !json.data?.length) continue;
-
-      for (const row of json.data) {
-        // row: [除權息日, 股票代號, 股票名稱, 除權息前收盤, 現金股利, 股票股利, ...]
-        const exDate    = row[0]?.replace(/(\d+)\/(\d+)\/(\d+)/, (_,y,m,d)=>`${parseInt(y)+1911}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
-        const cashDiv   = parseFloat(row[4]) || 0;
-        const stockDiv  = parseFloat(row[5]) || 0;
-        if (!cashDiv && !stockDiv) continue;
-
-        // Check duplicate (same stock + same exDate)
-        const isDup = dividends.some(d => d.code === stock.code && d.exDividendDate === exDate);
-        if (isDup) { skipped++; continue; }
-
-        const perShare = cashDiv || stockDiv;
-        const type     = cashDiv ? 'cash' : 'stock';
-        const total    = Math.round(perShare * stock.shares);
-
-        dividends.push({
-          id: `div_${stock.code}_${exDate}_twse`,
-          code: stock.code, name: stock.name,
-          type, perShare, shares: stock.shares, total,
-          declarationDate: '',
-          exDividendDate: exDate,
-          paymentDate: '',  // TWSE 不提供確切入帳日
-          status: new Date(exDate) <= new Date() ? 'confirmed' : 'announced',
-          source: 'twse',
-          fiscalYear: year - 1,  // 台股慣例：今年配前一年盈餘
-          period: 'annual',
-          note: `TWSE 自動抓取`,
-          fetchedAt: new Date().toISOString(),
-        });
-        fetched++;
+    for (const year of years) {
+      const result = await fetchDividendForStock(stock, year);
+      fetched += result.fetched;
+      skipped += result.skipped;
+      if (!result.ok && !result.fetched && year === thisYear) {
+        failed.push(stock.code);
       }
-    } catch(e) {
-      console.warn('TWSE fetch failed for', stock.code, e);
     }
   }
 
   saveDivs(); renderDividendPage();
-  btn.innerHTML = '🔄 自動抓取';
+  btn.innerHTML = '🔄 自動抓取 TWSE';
   btn.disabled = false;
 
-  if (fetched > 0) showToast(`✅ 抓取成功：新增 ${fetched} 筆${skipped?`，略過重複 ${skipped} 筆`:''}（來源：TWSE 正式公告）`);
-  else if (skipped > 0) showToast(`ℹ️ 資料已是最新，略過 ${skipped} 筆重複`);
-  else showToast('⚠️ 未抓到新資料（可能超出 TWSE 查詢範圍或 CORS 限制）');
+  if (fetched > 0) {
+    showToast(`✅ 成功新增 ${fetched} 筆${skipped ? `，略過重複 ${skipped} 筆` : ''}（近 3 年）`);
+  } else if (skipped > 0) {
+    showToast(`ℹ️ 資料已是最新（${skipped} 筆重複略過）`);
+  } else {
+    showToast('⚠️ 自動抓取受限，改用手動輸入', 'warn');
+    const uniqueFailed = [...new Set(failed)];
+    openDivBatchImport(uniqueFailed.length ? uniqueFailed : stocks.map(s => s.code));
+  }
+}
+
+// 嘗試多個來源抓單支股票
+async function fetchDividendForStock(stock, year) {
+  // 策略1: allorigins CORS proxy → TWSE
+  try {
+    const twseUrl = `https://www.twse.com.tw/rwd/zh/exRight/TWExRights?strDate=${year}0101&endDate=${year}1231&stockNo=${stock.code}&response=json`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(twseUrl)}`;
+    const res = await Promise.race([
+      fetch(proxyUrl),
+      new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')), 5000))
+    ]);
+    if (res.ok) {
+      const wrapper = await res.json();
+      const json = JSON.parse(wrapper.contents);
+      if (json.stat === 'OK' && json.data?.length) {
+        return parseTWSERows(json.data, stock, year);
+      }
+    }
+  } catch(e) { /* fallthrough */ }
+
+  // 策略2: 直接打 TWSE（若同源或無 CORS 限制）
+  try {
+    const url = `https://www.twse.com.tw/rwd/zh/exRight/TWExRights?strDate=${year}0101&endDate=${year}1231&stockNo=${stock.code}&response=json`;
+    const res = await Promise.race([
+      fetch(url, { mode: 'cors' }),
+      new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')), 4000))
+    ]);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.stat === 'OK' && json.data?.length) {
+        return parseTWSERows(json.data, stock, year);
+      }
+    }
+  } catch(e) { /* fallthrough */ }
+
+  return { ok: false, fetched: 0, skipped: 0 };
+}
+
+function parseTWSERows(rows, stock, year) {
+  let fetched = 0, skipped = 0;
+  for (const row of rows) {
+    // TWSE row: [除權息日(民國), 股票代號, 名稱, 除息前收盤, 現金股利, 股票股利, ...]
+    const rawDate = row[0] || '';
+    const exDate  = rawDate.replace(/(\d+)\/(\d+)\/(\d+)/, (_,y,m,d) =>
+      `${parseInt(y)+1911}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+    const cashDiv  = parseFloat(row[4]) || 0;
+    const stockDiv = parseFloat(row[5]) || 0;
+    if (!cashDiv && !stockDiv) continue;
+    const isDup = dividends.some(d => d.code === stock.code && d.exDividendDate === exDate);
+    if (isDup) { skipped++; continue; }
+    dividends.push({
+      id: `div_${stock.code}_${exDate}_twse`,
+      code: stock.code, name: stock.name,
+      type: cashDiv ? 'cash' : 'stock',
+      perShare: cashDiv || stockDiv,
+      shares: stock.shares,
+      total: Math.round((cashDiv || stockDiv) * stock.shares),
+      declarationDate: '', exDividendDate: exDate, paymentDate: '',
+      status: new Date(exDate) <= new Date() ? 'confirmed' : 'announced',
+      source: 'twse', fiscalYear: year - 1, period: 'annual',
+      note: 'TWSE 自動抓取', fetchedAt: new Date().toISOString(),
+    });
+    fetched++;
+  }
+  return { ok: true, fetched, skipped };
+}
+
+// ── 手動批次輸入股利（CORS fallback UI）
+function openDivBatchImport(codes) {
+  const example = codes.slice(0,3).map(c => {
+    const s = stocks.find(x=>x.code===c);
+    return `${c},${s?s.name:''},3.50,${new Date().getFullYear()}-07-15,${new Date().getFullYear()}-10-10`;
+  }).join('\n');
+  const text = prompt(
+    `自動抓取失敗（瀏覽器 CORS 限制）。\n` +
+    `請手動貼入股利資料，格式：\n股票代號,股票名稱,每股股利,除息日,發放日\n\n` +
+    `範例（可直接修改後貼入）:\n${example}`,
+    example
+  );
+  if (!text) return;
+  let added = 0;
+  text.trim().split('\n').forEach(line => {
+    const [code, name, perShareStr, exDate, payDate] = line.split(',').map(s=>s.trim());
+    const perShare = parseFloat(perShareStr);
+    if (!code || isNaN(perShare) || perShare <= 0) return;
+    const s = stocks.find(x => x.code === code);
+    if (!s) return;
+    const total = Math.round(perShare * s.shares);
+    const isDup = dividends.some(d => d.code === code && d.exDividendDate === exDate);
+    if (isDup) return;
+    dividends.push({
+      id: `div_${code}_${exDate}_manual`,
+      code, name: name || s.name,
+      type: 'cash', perShare, shares: s.shares, total,
+      declarationDate: '', exDividendDate: exDate || '', paymentDate: payDate || '',
+      status: 'paid', source: 'manual',
+      fiscalYear: parseInt((exDate||'').slice(0,4)) || new Date().getFullYear(),
+      period: 'annual', note: '手動批次匯入', fetchedAt: new Date().toISOString(),
+    });
+    added++;
+  });
+  saveDivs(); renderDividendPage();
+  if (added > 0) showToast(`✅ 手動匯入 ${added} 筆股利`);
+  else showToast('⚠️ 沒有新增任何股利（格式或重複）', 'warn');
 }
 
 // ── export div CSV (upgraded)
@@ -2576,46 +2701,7 @@ if (!localStorage.getItem(STOCKS_KEY) && localStorage.getItem('tw_stocks')) {
   stocks = JSON.parse(localStorage.getItem(STOCKS_KEY));
 }
 
-// Inject demo data ONLY on very first visit (tracked by SEEDED_KEY)
-// Once seeded, never re-inject — even if user deletes everything
-if (!localStorage.getItem(SEEDED_KEY)) {
-  if (stocks.length === 0) {
-    stocks = [
-      { code: '2330', name: '台積電',     shares: 1000, cost: 520, price: 855, realized: 12000 },
-      { code: '0050', name: '元大台灣50', shares: 3000, cost: 128, price: 148, realized: 5000  },
-      { code: '2317', name: '鴻海',       shares: 5000, cost: 98,  price: 112, realized: 0     },
-      { code: '2881', name: '富邦金',     shares: 2000, cost: 65,  price: 71,  realized: 3200  },
-      { code: '6505', name: '台塑化',     shares: 1000, cost: 80,  price: 74,  realized: -2000 },
-    ];
-    save(true);
-  }
-  localStorage.setItem(SEEDED_KEY, '1');
-}
-
-renderTable();
-renderCharts();
-
-const DIV_SEEDED_KEY = 'tw_divs_seeded';
-if (!localStorage.getItem(DIV_SEEDED_KEY)) {
-  if (dividends.length === 0) {
-    const y = new Date().getFullYear();
-  dividends = [
-    { id:`div_2330_${y}0718`,  code:'2330', name:'台積電',     type:'cash',  perShare:11.0, shares:1000, total:11000, declarationDate:`${y}-05-16`, exDividendDate:`${y}-07-18`, paymentDate:`${y}-10-09`, status:'paid',      source:'twse',   fiscalYear:y-1, period:'annual',  note:'TWSE 自動抓取', fetchedAt:new Date().toISOString() },
-    { id:`div_2330_${y}0115`,  code:'2330', name:'台積電',     type:'cash',  perShare:3.0,  shares:1000, total:3000,  declarationDate:`${y}-01-05`, exDividendDate:`${y}-01-15`, paymentDate:`${y}-04-10`, status:'paid',      source:'manual', fiscalYear:y-1, period:'interim', note:'中期股利', fetchedAt:null },
-    { id:`div_0050_${y}1022`,  code:'0050', name:'元大台灣50', type:'cash',  perShare:2.9,  shares:3000, total:8700,  declarationDate:'',           exDividendDate:`${y}-10-22`, paymentDate:`${y}-11-20`, status:'confirmed', source:'twse',   fiscalYear:y-1, period:'annual',  note:'',          fetchedAt:new Date().toISOString() },
-    { id:`div_0050_${y}0410`,  code:'0050', name:'元大台灣50', type:'cash',  perShare:1.5,  shares:3000, total:4500,  declarationDate:'',           exDividendDate:`${y}-04-10`, paymentDate:`${y}-05-15`, status:'paid',      source:'twse',   fiscalYear:y-1, period:'interim', note:'',          fetchedAt:new Date().toISOString() },
-    { id:`div_2881_${y}0805`,  code:'2881', name:'富邦金',     type:'cash',  perShare:2.5,  shares:2000, total:5000,  declarationDate:`${y}-06-01`, exDividendDate:`${y}-08-05`, paymentDate:`${y}-09-20`, status:'paid',      source:'manual', fiscalYear:y-1, period:'annual',  note:'',          fetchedAt:null },
-    { id:`div_2317_${y}0912`,  code:'2317', name:'鴻海',       type:'cash',  perShare:4.5,  shares:5000, total:22500, declarationDate:`${y}-07-10`, exDividendDate:`${y}-09-12`, paymentDate:'',           status:'announced', source:'manual', fiscalYear:y-1, period:'annual',  note:'預計 10 月入帳', fetchedAt:null },
-    { id:`div_2330_${y-1}0720`,code:'2330', name:'台積電',     type:'cash',  perShare:10.0, shares:1000, total:10000, declarationDate:`${y-1}-05-15`,exDividendDate:`${y-1}-07-20`,paymentDate:`${y-1}-10-12`,status:'paid',     source:'twse',   fiscalYear:y-2, period:'annual',  note:'',          fetchedAt:new Date().toISOString() },
-    { id:`div_0050_${y-1}1018`,code:'0050', name:'元大台灣50', type:'cash',  perShare:2.5,  shares:3000, total:7500,  declarationDate:'',           exDividendDate:`${y-1}-10-18`,paymentDate:`${y-1}-11-22`,status:'paid',     source:'twse',   fiscalYear:y-2, period:'annual',  note:'',          fetchedAt:new Date().toISOString() },
-    { id:`div_2881_${y-1}0810`,code:'2881', name:'富邦金',     type:'cash',  perShare:2.0,  shares:2000, total:4000,  declarationDate:'',           exDividendDate:`${y-1}-08-10`,paymentDate:`${y-1}-09-25`,status:'paid',     source:'manual', fiscalYear:y-2, period:'annual',  note:'',          fetchedAt:null },
-    { id:`div_2330_${y-2}0715`,code:'2330', name:'台積電',     type:'cash',  perShare:8.5,  shares:1000, total:8500,  declarationDate:`${y-2}-05-10`,exDividendDate:`${y-2}-07-15`,paymentDate:`${y-2}-10-08`,status:'paid',    source:'manual', fiscalYear:y-3, period:'annual',  note:'',          fetchedAt:null },
-  ];
-    saveDivs();
-  }
-  localStorage.setItem(DIV_SEEDED_KEY, '1');
-}
-
+// ── 啟動：無任何預設資料，完全乾淨 ──
 renderTable();
 renderCharts();
 </script>
