@@ -1344,9 +1344,24 @@ main { position: relative; z-index: 5; }
 // ════════════════════════════════════════════
 // STATE  — single source of truth
 // ════════════════════════════════════════════
-const STOCKS_KEY    = 'tw_stocks_v2';
-const SNAPSHOTS_KEY = 'tw_snapshots';
-const DIVS_KEY      = 'tw_dividends';
+const APP_VERSION   = 'v3';          // ← 版本號，改版時自動清除舊快取
+const STOCKS_KEY    = 'tw_stocks_v3';
+const SNAPSHOTS_KEY = 'tw_snapshots_v3';
+const DIVS_KEY      = 'tw_dividends_v3';
+const VER_KEY       = 'tw_app_version';
+
+// ── 版本檢查：若版本不符，清除所有舊 localStorage ──
+if (localStorage.getItem(VER_KEY) !== APP_VERSION) {
+  // 清除所有舊 key（含 v1, v2 的舊資料）
+  const oldKeys = [
+    'tw_stocks', 'tw_stocks_v2', 'tw_snapshots', 'tw_dividends',
+    'tw_seeded', 'tw_divs_seeded', 'tw_txlog',
+    'tw_snapshots_v3', 'tw_dividends_v3', 'tw_stocks_v3'
+  ];
+  oldKeys.forEach(k => localStorage.removeItem(k));
+  localStorage.setItem(VER_KEY, APP_VERSION);
+  console.log('[Portfolio] localStorage cleared — fresh start v3');
+}
 
 let stocks    = JSON.parse(localStorage.getItem(STOCKS_KEY)    || '[]');
 let snapshots = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) || '[]');
@@ -1620,14 +1635,14 @@ function saveSnapshot() {
   const date = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`;
   const time = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
   snapshots.push({ date, time, value: total });
-  localStorage.setItem('tw_snapshots', JSON.stringify(snapshots));
+  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots));
   renderHistory();
   showToast('✅ 快照已儲存');
 }
 
 // ── transaction log ──
-let txLog = JSON.parse(localStorage.getItem('tw_txlog') || '[]');
-function saveTxLog() { localStorage.setItem('tw_txlog', JSON.stringify(txLog)); }
+let txLog = JSON.parse(localStorage.getItem('tw_txlog_v3') || '[]');
+function saveTxLog() { localStorage.setItem('tw_txlog_v3', JSON.stringify(txLog)); }
 
 let currentTxMode = 'new'; // 'new' | 'buy' | 'sell'
 
@@ -2206,12 +2221,12 @@ dz.addEventListener('drop', e => {
 });
 
 // ── DIVIDEND ──
-let dividends = JSON.parse(localStorage.getItem('tw_dividends') || '[]');
+let dividends = JSON.parse(localStorage.getItem(DIVS_KEY) || '[]');
 let divEditIndex = -1;
 let activeYear = new Date().getFullYear();
 let divLineInst, divPieInst;
 
-function saveDivs() { localStorage.setItem('tw_dividends', JSON.stringify(dividends)); }
+function saveDivs() { localStorage.setItem(DIVS_KEY, JSON.stringify(dividends)); }
 
 // Migrate old records lacking new fields
 function migrateDividends() {
@@ -2695,11 +2710,7 @@ function exportDivJSON() {
 // INIT
 // ════════════════════════════════════════════
 
-// Migrate old localStorage key → new key (one-time)
-if (!localStorage.getItem(STOCKS_KEY) && localStorage.getItem('tw_stocks')) {
-  localStorage.setItem(STOCKS_KEY, localStorage.getItem('tw_stocks'));
-  stocks = JSON.parse(localStorage.getItem(STOCKS_KEY));
-}
+// migration removed — handled by version clearing
 
 // ── 啟動：無任何預設資料，完全乾淨 ──
 renderTable();
