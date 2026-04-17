@@ -1372,10 +1372,10 @@ main { position: relative; z-index: 5; }
 // ════════════════════════════════════════════
 // STATE  — single source of truth
 // ════════════════════════════════════════════
-const APP_VERSION   = 'v3';          // ← 版本號，改版時自動清除舊快取
-const STOCKS_KEY    = 'tw_stocks_v3';
-const SNAPSHOTS_KEY = 'tw_snapshots_v3';
-const DIVS_KEY      = 'tw_dividends_v3';
+const APP_VERSION   = 'v4';          // ← 版本號，改版時自動清除舊快取
+const STOCKS_KEY    = 'tw_stocks_v4';
+const SNAPSHOTS_KEY = 'tw_snapshots_v4';
+const DIVS_KEY      = 'tw_dividends_v4';
 const VER_KEY       = 'tw_app_version';
 
 // ── 版本檢查：若版本不符，清除所有舊 localStorage ──
@@ -1383,8 +1383,8 @@ if (localStorage.getItem(VER_KEY) !== APP_VERSION) {
   // 清除所有舊 key（含 v1, v2 的舊資料）
   const oldKeys = [
     'tw_stocks', 'tw_stocks_v2', 'tw_snapshots', 'tw_dividends',
-    'tw_seeded', 'tw_divs_seeded', 'tw_txlog',
-    'tw_snapshots_v3', 'tw_dividends_v3', 'tw_stocks_v3'
+    'tw_seeded', 'tw_divs_seeded', 'tw_txlog', 'tw_price_fetched', 'tw_div_fetched',
+    'tw_snapshots_v3', 'tw_dividends_v3', 'tw_stocks_v3', 'tw_snapshots_v4', 'tw_dividends_v4', 'tw_stocks_v4'
   ];
   oldKeys.forEach(k => localStorage.removeItem(k));
   localStorage.setItem(VER_KEY, APP_VERSION);
@@ -1561,7 +1561,12 @@ function renderTable() {
 }
 
 // ── charts ──
-const COLORS = ['#3b9eff','#7dd3fc','#34d399','#f472b6','#fbbf24','#a78bfa','#fb923c','#60b4ff'];
+const COLORS = [
+  '#3b9eff','#34d399','#fbbf24','#f472b6','#fb923c','#a78bfa',
+  '#7dd3fc','#6ee7b7','#fde68a','#fbcfe8','#fed7aa','#ddd6fe',
+  '#60b4ff','#10b981','#f59e0b','#ec4899','#f97316','#8b5cf6',
+  '#0ea5e9','#14b8a6','#eab308','#db2777','#ea580c','#7c3aed'
+];
 
 function renderCharts() {
   // pie
@@ -1672,8 +1677,8 @@ function saveSnapshot() {
 }
 
 // ── transaction log ──
-let txLog = JSON.parse(localStorage.getItem('tw_txlog_v3') || '[]');
-function saveTxLog() { localStorage.setItem('tw_txlog_v3', JSON.stringify(txLog)); }
+let txLog = JSON.parse(localStorage.getItem('tw_txlog_v4') || '[]');
+function saveTxLog() { localStorage.setItem('tw_txlog_v4', JSON.stringify(txLog)); }
 
 let currentTxMode = 'new'; // 'new' | 'buy' | 'sell'
 
@@ -2006,56 +2011,54 @@ function clearAllDividends() {
 // 批次更新現價
 // ════════════════════════════════════════════
 // ════════════════════════════════════════════
-// 即時股價抓取 — Yahoo Finance (via allorigins CORS proxy)
-// 台股代號格式：2330.TW / 00878.TWO（上市.TW，上櫃.TWO）
 // ════════════════════════════════════════════
+// 即時股價抓取 — Yahoo Finance (via allorigins CORS proxy)
+// 策略：TW 和 TWO 都試，取得到就用
+// ════════════════════════════════════════════
+
+// 上櫃已知清單（不完整時交由 fallback 補）
+const OTC_CODES = new Set([
+  '00850','00878','00919','00900','00713','00915','00916','00917',
+  '00923','00929','00934','00940','00941','00943','00944','00945',
+  '06206','06208',
+]);
+
+async function yahooFetch(symbol) {
+  const url = `https://query2.finance.yahoo.com/v8/finance/quote?symbols=${encodeURIComponent(symbol)}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,shortName`;
+  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const res = await Promise.race([
+    fetch(proxy),
+    new Promise((_, rej) => setTimeout(() => rej('timeout'), 7000))
+  ]);
+  if (!res.ok) throw new Error('fetch fail');
+  const wrapper = await res.json();
+  const data = JSON.parse(wrapper.contents);
+  const q = data?.quoteResponse?.result?.[0];
+  if (!q?.regularMarketPrice) throw new Error('no price');
+  return {
+    price:     parseFloat(q.regularMarketPrice.toFixed(2)),
+    change:    q.regularMarketChange || 0,
+    changePct: q.regularMarketChangePercent || 0,
+    ok: true
+  };
+}
+
 async function fetchLivePrice(code) {
-  // 判斷上市/上櫃（4碼一般上市；5碼以上或特定前綴為上櫃 ETF）
-  const isOTC = code.length >= 5 || ['00','0050','0056'].some(p => code.startsWith(p) && code.length === 4);
-  const suffix = isOTC ? '.TWO' : '.TW';
-  const symbol = encodeURIComponent(code + suffix);
+  const padded = code.padStart(4, '0');  // 850 → 0850 for lookup
+  const isOTC  = OTC_CODES.has('00' + code) || OTC_CODES.has(padded) || code.startsWith('00');
 
-  // Yahoo Finance v8 quote endpoint（透過 allorigins proxy 解決 CORS）
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${symbol}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent`;
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`;
+  // 嘗試順序：先猜測的，再反過來
+  const attempts = isOTC
+    ? [code + '.TWO', code + '.TW']
+    : [code + '.TW',  code + '.TWO'];
 
-  try {
-    const res = await Promise.race([
-      fetch(proxyUrl),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))
-    ]);
-    if (!res.ok) throw new Error('proxy error');
-    const wrapper = await res.json();
-    const data = JSON.parse(wrapper.contents);
-    const quote = data?.quoteResponse?.result?.[0];
-    if (!quote || !quote.regularMarketPrice) throw new Error('no price');
-    return {
-      price:     quote.regularMarketPrice,
-      change:    quote.regularMarketChange     || 0,
-      changePct: quote.regularMarketChangePercent || 0,
-      ok: true
-    };
-  } catch {
-    // Fallback: 試另一個 suffix
-    const fallbackSuffix = isOTC ? '.TW' : '.TWO';
-    const fallbackSymbol = encodeURIComponent(code + fallbackSuffix);
-    const fallbackUrl = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${fallbackSymbol}&fields=regularMarketPrice`;
-    const fallbackProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(fallbackUrl)}`;
+  for (const symbol of attempts) {
     try {
-      const res2 = await Promise.race([
-        fetch(fallbackProxy),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
-      ]);
-      if (!res2.ok) throw new Error('fallback error');
-      const w2 = await res2.json();
-      const d2 = JSON.parse(w2.contents);
-      const q2 = d2?.quoteResponse?.result?.[0];
-      if (!q2?.regularMarketPrice) throw new Error('no price fallback');
-      return { price: q2.regularMarketPrice, change: 0, changePct: 0, ok: true };
-    } catch {
-      return { price: null, ok: false };
-    }
+      const result = await yahooFetch(symbol);
+      return result;
+    } catch { /* try next */ }
   }
+  return { price: null, ok: false };
 }
 
 // 更新單一股票現價（列 UI）
@@ -2954,13 +2957,13 @@ renderCharts();
 async function autoRefreshPricesOnLoad() {
   if (!stocks.length) return;
 
-  // 條件：任何一檔有標記待更新、現價=0、或現價=成本（代表是 fallback 值）
-  const needsUpdate = stocks.some(s =>
-    s.needsPriceUpdate ||
-    s.price === 0 ||
-    s.price === s.cost    // CSV 匯入現價欄為空時的 fallback
-  );
-  if (!needsUpdate) return;   // 已有現價就不重複抓
+  // 每次載入都更新（股價每天都在變）
+  // 若上次更新時間在 15 分鐘內，則跳過（避免頻繁呼叫）
+  const lastFetch = parseInt(localStorage.getItem('tw_price_fetched') || '0');
+  const elapsed = Date.now() - lastFetch;
+  if (elapsed < 15 * 60 * 1000 && stocks.every(s => !s.needsPriceUpdate && s.price > 0)) {
+    return; // 15 分鐘內且無待更新，跳過
+  }
 
   showToast('📡 自動更新現價中...', 'warn');
 
@@ -2981,20 +2984,34 @@ async function autoRefreshPricesOnLoad() {
   }
 
   if (ok > 0) {
-    save(true);   // 靜默儲存，不觸發 saving 動畫
+    localStorage.setItem('tw_price_fetched', Date.now().toString());
+    save(true);
     renderTable();
     renderCharts();
     const msg = fail > 0
-      ? `✅ ${ok} 檔現價已更新，${fail} 檔失敗（請手動點「💹 更新現價」）`
-      : `✅ ${ok} 檔現價已自動更新`;
+      ? `✅ ${ok} 檔現價已更新，${fail} 檔無法取得`
+      : `✅ ${ok} 檔現價已自動更新（Yahoo Finance）`;
     showToast(msg, fail > 0 ? 'warn' : 'success');
   } else {
-    showToast('⚠️ 自動抓取現價失敗，請點「💹 更新現價」', 'warn');
+    showToast('⚠️ 現價抓取失敗，請點「💹 更新現價」手動觸發', 'warn');
   }
 }
 
-// 延遲 800ms 再抓，讓頁面先渲染完
-setTimeout(autoRefreshPricesOnLoad, 800);
+// 延遲 1s 再抓現價
+setTimeout(autoRefreshPricesOnLoad, 1000);
+
+// 延遲 3s 自動抓取今年股利（僅首次或 24 小時後）
+setTimeout(async () => {
+  if (!stocks.length) return;
+  const lastDivFetch = parseInt(localStorage.getItem('tw_div_fetched') || '0');
+  const elapsed = Date.now() - lastDivFetch;
+  if (elapsed < 24 * 60 * 60 * 1000) return; // 24小時內不重複
+  const btn = document.getElementById('fetchBtn');
+  if (btn) {
+    await fetchTWSEDividends();
+    localStorage.setItem('tw_div_fetched', Date.now().toString());
+  }
+}, 3000);
 </script>
 
 </body>
